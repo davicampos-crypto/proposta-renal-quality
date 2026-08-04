@@ -2,6 +2,29 @@
    Respeita prefers-reduced-motion, pausa fora da viewport e em aba oculta. */
 (function () {
   'use strict';
+
+  /* Em apps React/Next, inserir o canvas antes da hidratação causa mismatch e o
+     React descarta o nó. Espera a hidratação terminar antes de montar. */
+  function ready(cb) {
+    var done = false;
+    function go() { if (done) return; done = true; cb(); }
+    var isReactApp = !!(self.__next_f || document.querySelector('script[src*="/_next/"]'));
+    if (!isReactApp) {
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+      else go();
+      return;
+    }
+    var tries = 0;
+    (function poll() {
+      var host = document.querySelector('main') || document.body;
+      var hydrated = host && Object.keys(host).some(function (k) { return k.indexOf('__react') === 0; });
+      if (hydrated) { setTimeout(go, 60); return; }
+      if (++tries > 120) return go();
+      setTimeout(poll, 50);
+    })();
+  }
+
+  function boot() {
   var HERO = document.querySelector('.hero');
   if (!HERO || HERO.querySelector('canvas[data-hero-anim]')) return;
   var ctxTest = document.createElement('canvas').getContext && true;
@@ -98,6 +121,8 @@
 
   var last = 0;
   function loop(ts) {
+    /* se o React re-renderizou o hero e descartou este canvas, encerra o laço */
+    if (!cv.isConnected) { stop(); return; }
     raf = requestAnimationFrame(loop);
     var dt = ts - last;
     if (!last || dt > 100) dt = 16;
@@ -129,4 +154,15 @@
     if (document.hidden) stop(); else if (visible) start();
   });
   start();
+  }
+
+  /* Remonta se o canvas for descartado por um re-render do React. */
+  ready(function () {
+    boot();
+    var checks = 0;
+    var iv = setInterval(function () {
+      if (++checks > 30) { clearInterval(iv); return; }
+      if (!document.querySelector('.hero canvas[data-hero-anim]')) boot();
+    }, 500);
+  });
 })();
